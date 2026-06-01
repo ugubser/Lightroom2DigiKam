@@ -1,0 +1,21 @@
+.DS_Store
+*.pyc
+__pycache__/
+
+# Lightroom catalog files and side databases
+*.lrcat
+*.lrcat-*
+*.lrdata/
+*.lrcat-data/
+
+# digiKam and SQLite runtime databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Generated migration outputs
+catalog_import_export/output/
+
