@@ -17,5 +17,5 @@ __pycache__/
 *.sqlite-wal
 
 # Generated migration outputs
-catalog_import_export/output/
-
+output/
+catalog_import_export/
