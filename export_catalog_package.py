@@ -6,6 +6,7 @@ Outputs:
   - photo_supreme_import.csv: flat CSV suitable for DAM import/mapping
   - missing_files.csv: catalog entries whose originals do not resolve
   - extra_files.csv: files in the media root that are not catalog originals/sidecars
+  - folder_labels.csv/json: Lightroom folder color labels
   - migration_report.md: human-readable summary
 """
 
@@ -97,12 +98,46 @@ def sidecar_paths_for(file_path: str) -> dict[str, str | None]:
     return result
 
 
+def load_folder_labels(conn: sqlite3.Connection, from_root: str, to_root: str) -> list[dict[str, str]]:
+    sql = """
+        SELECT
+          fl.id_local AS label_id,
+          fl.folder AS folder_id,
+          fl.label AS label,
+          fl.labelType AS label_type,
+          rf.absolutePath || f.pathFromRoot AS lightroom_path
+        FROM AgLibraryFolderLabel fl
+        JOIN AgLibraryFolder f ON fl.folder = f.id_local
+        JOIN AgLibraryRootFolder rf ON f.rootFolder = rf.id_local
+        ORDER BY fl.label, lightroom_path
+    """
+    labels = []
+    for row in conn.execute(sql):
+        lightroom_path = row["lightroom_path"] or ""
+        resolved_path = lightroom_path
+        if lightroom_path.startswith(from_root):
+            resolved_path = to_root + lightroom_path[len(from_root) :]
+        labels.append(
+            {
+                "label_id": row["label_id"],
+                "folder_id": row["folder_id"],
+                "label": row["label"],
+                "label_type": row["label_type"],
+                "lightroom_path": lightroom_path,
+                "resolved_path": resolved_path,
+                "exists": str(Path(resolved_path).exists()),
+            }
+        )
+    return labels
+
+
 def export(args: argparse.Namespace) -> None:
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     conn = connect_catalog(args.catalog)
     keyword_by_image, collection_by_image = load_lookup_maps(conn)
+    folder_labels = load_folder_labels(conn, args.from_root, args.to_root)
 
     sql = """
         SELECT
@@ -365,6 +400,28 @@ def export(args: argparse.Namespace) -> None:
                         {"path": path, "extension": ext, "classification": "extra_or_unmatched"}
                     )
 
+    folder_labels_csv_path = output_dir / "folder_labels.csv"
+    folder_labels_json_path = output_dir / "folder_labels.json"
+    folder_label_fields = [
+        "label_id",
+        "folder_id",
+        "label",
+        "label_type",
+        "lightroom_path",
+        "resolved_path",
+        "exists",
+    ]
+    with folder_labels_csv_path.open("w", newline="", encoding="utf-8") as folder_labels_csv:
+        writer = csv.DictWriter(folder_labels_csv, fieldnames=folder_label_fields)
+        writer.writeheader()
+        writer.writerows(folder_labels)
+    folder_labels_json_path.write_text(
+        json.dumps(folder_labels, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    folder_label_counts = Counter(label["label"] for label in folder_labels)
+
     report_path = output_dir / "migration_report.md"
     with report_path.open("w", encoding="utf-8") as report:
         report.write("# Lightroom Catalog Export Report\n\n")
@@ -393,8 +450,30 @@ def export(args: argparse.Namespace) -> None:
         for key, count in extra_counts.most_common(30):
             report.write(f"- {key}: {count:,}\n")
 
+        report.write("\n## Lightroom Folder Labels\n\n")
+        if folder_labels:
+            for label, count in folder_label_counts.most_common():
+                report.write(f"- {label}: {count:,}\n")
+
+            report.write("\n### Yellow Folders\n\n")
+            yellow_labels = [item for item in folder_labels if item["label"] == "yellow"]
+            if yellow_labels:
+                for item in yellow_labels:
+                    report.write(f"- `{item['lightroom_path']}`\n")
+            else:
+                report.write("- None\n")
+        else:
+            report.write("- None found\n")
+
         report.write("\n## Generated Files\n\n")
-        for path in (manifest_path, csv_path, missing_path, extra_path):
+        for path in (
+            manifest_path,
+            csv_path,
+            missing_path,
+            extra_path,
+            folder_labels_csv_path,
+            folder_labels_json_path,
+        ):
             size = path.stat().st_size if path.exists() else 0
             report.write(f"- `{path}` ({size:,} bytes)\n")
 
@@ -402,6 +481,8 @@ def export(args: argparse.Namespace) -> None:
     print(f"Wrote {csv_path}")
     print(f"Wrote {missing_path}")
     print(f"Wrote {extra_path}")
+    print(f"Wrote {folder_labels_csv_path}")
+    print(f"Wrote {folder_labels_json_path}")
     print(f"Wrote {report_path}")
 
 
