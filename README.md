@@ -32,11 +32,19 @@ not write into image files.
 ## Supporting Scripts
 
 - `export_catalog_package.py`
-  - Earlier catalog export/report script for JSON and CSV analysis.
+  - Exports a read-only Lightroom catalog analysis package.
+  - Writes `catalog_manifest.json`, `photo_supreme_import.csv`,
+    `missing_files.csv`, `extra_files.csv`, `folder_labels.csv`,
+    `folder_labels.json`, and `migration_report.md`.
+  - Useful for auditing the catalog before or after XMP migration, including
+    Lightroom folder color labels such as blue/yellow cleanup markers.
 
 - `generate_supplemental_xmp.py`
-  - Earlier supplemental XMP planning script for cataloged files without
-    sidecars.
+  - Reads `photo_supreme_import.csv` from the analysis package.
+  - Creates `xmp_generation_plan.csv` for cataloged files that have useful
+    metadata but no existing XMP sidecar.
+  - Optionally writes standalone supplemental XMP files under
+    `supplemental_xmp/`. This is separate from the main digiKam exporter.
 
 ## Requirements
 
@@ -46,6 +54,59 @@ not write into image files.
 - digiKam configured to read XMP sidecars.
 
 No third-party Python packages are required.
+
+## Catalog Analysis Report
+
+Generate the report package:
+
+```bash
+python3 export_catalog_package.py \
+  --catalog "/path/to/Lightroom Catalog.lrcat" \
+  --from-root "/original/photo/root/" \
+  --to-root "/photo/root/" \
+  --output "./output"
+```
+
+Generated files:
+
+```text
+output/catalog_manifest.json       detailed JSON record per Lightroom image
+output/photo_supreme_import.csv    flat CSV export for analysis/import mapping
+output/missing_files.csv           catalog records whose originals are missing
+output/extra_files.csv             files under the photo root not matched to catalog originals
+output/folder_labels.csv           Lightroom folder color labels
+output/folder_labels.json          same folder labels in JSON
+output/migration_report.md         human-readable summary
+```
+
+The folder-label outputs come from Lightroom's folder color labels. They are
+not written to XMP and are intended as migration bookkeeping.
+
+Plan supplemental XMP files from the analysis CSV:
+
+```bash
+python3 generate_supplemental_xmp.py --output "./output"
+```
+
+That writes:
+
+```text
+output/xmp_generation_plan.csv
+```
+
+Optionally create standalone supplemental XMP files in an output mirror tree:
+
+```bash
+python3 generate_supplemental_xmp.py --output "./output" --write-files
+```
+
+This writes under:
+
+```text
+output/supplemental_xmp/
+```
+
+It does not modify the original photo folders.
 
 ## digiKam Export
 
