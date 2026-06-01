@@ -42,7 +42,7 @@ not write into image files.
 
 - Python 3.10 or newer.
 - A Lightroom Classic `.lrcat` file.
-- A copied photo tree to write sidecars into.
+- The directory where the photos are stored. Make backups first.
 - digiKam configured to read XMP sidecars.
 
 No third-party Python packages are required.
