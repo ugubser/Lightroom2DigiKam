@@ -19,3 +19,4 @@ __pycache__/
 # Generated migration outputs
 output/
 catalog_import_export/
+digikam-group-*.json

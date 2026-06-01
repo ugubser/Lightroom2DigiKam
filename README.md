@@ -13,6 +13,11 @@ filename.ext.xmp
 The scripts do not write to the Lightroom catalog. The main exporter also does
 not write into image files.
 
+This suite has been tested against digiKam 9.0 using explicit sidecars in the
+`filename.ext.xmp` form and a SQLite `digikam4.db` database. The XMP workflow is
+the portable migration path; the optional group importer writes directly to the
+digiKam database and should be treated as version-sensitive.
+
 ## Main Scripts
 
 - `lr_to_digikam_xmp.py`
@@ -28,6 +33,15 @@ not write into image files.
   - Reports files present on disk but not referenced by Lightroom.
   - Dry-run by default; can quarantine or delete candidates when explicitly
     requested.
+
+- `apply_digikam_groups.py`
+  - Reads Lightroom stacks and applies them as native digiKam groups in
+    `digikam4.db`.
+  - Dry-run by default; requires `--write` before it modifies the digiKam
+    database.
+  - Creates a timestamped backup of `digikam4.db` before writing.
+  - Should only be run with digiKam closed, after digiKam has imported the
+    photo tree and read the generated XMP sidecars.
 
 ## Supporting Scripts
 
@@ -52,8 +66,17 @@ not write into image files.
 - A Lightroom Classic `.lrcat` file.
 - The directory where the photos are stored. Make backups first.
 - digiKam configured to read XMP sidecars.
+- Tested with digiKam 9.0 and SQLite-backed `digikam4.db`.
 
 No third-party Python packages are required.
+
+Recommended digiKam metadata settings for this workflow:
+
+- Read metadata from sidecar files.
+- Write metadata to sidecar files only, if you want digiKam writes to stay out
+  of image files.
+- Leave commercial-compatible sidecar names disabled. This workflow writes and
+  expects explicit sidecars such as `IMG_0001.RW2.xmp`, not `IMG_0001.xmp`.
 
 ## Catalog Analysis Report
 
@@ -150,6 +173,68 @@ Useful options:
 --limit N                       process only the first N mapped target files
 --allow-missing                 create sidecars even if target images are absent
 ```
+
+## digiKam Groups
+
+After digiKam has indexed the photo tree and read the generated sidecars, you
+can apply Lightroom stacks as native digiKam groups. Close digiKam before
+running this with `--write`.
+
+Lightroom calls these records stacks. digiKam stores the equivalent native
+relationship as groups in `ImageRelations`. The script maps Lightroom's
+top-of-stack image to the digiKam group leader and groups the remaining stack
+members behind it.
+
+Tested full-library run against digiKam 9.0:
+
+```text
+Lightroom stack rows: 4910
+Candidate groups: 1224
+Writable groups: 1195
+Writable relations: 3097
+Skipped groups: 29
+```
+
+The skipped groups in that run were already present from a prior small-folder
+test. After the full run, the database contained 3,177 native digiKam group
+relations.
+
+Dry run:
+
+```bash
+python3 apply_digikam_groups.py \
+  "/path/to/Lightroom Catalog.lrcat" \
+  "/path/to/digikam4.db" \
+  --path-prefix "/original/photo/root=/photo/root" \
+  --digikam-root "/photo/root" \
+  --report "./digikam-group-dry-run.json"
+```
+
+Write groups:
+
+```bash
+python3 apply_digikam_groups.py \
+  "/path/to/Lightroom Catalog.lrcat" \
+  "/path/to/digikam4.db" \
+  --path-prefix "/original/photo/root=/photo/root" \
+  --digikam-root "/photo/root" \
+  --report "./digikam-group-apply-report.json" \
+  --write
+```
+
+Useful options:
+
+```text
+--write                         actually write digiKam group relations
+--path-prefix OLD=NEW           map Lightroom paths to digiKam photo paths
+--digikam-root FOLDER           fallback photo root for digiKam album paths
+--only-under FOLDER             limit to stacks under one mapped folder
+--replace-existing              replace existing digiKam group relations for affected images
+--limit N                       process only the first N candidate groups
+```
+
+Without `--replace-existing`, existing digiKam group relations are preserved
+and conflicting Lightroom stacks are reported instead of overwritten.
 
 ## Prune Report
 
