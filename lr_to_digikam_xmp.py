@@ -48,6 +48,7 @@ NS = {
     "lr": "http://ns.adobe.com/lightroom/1.0/",
     "photoshop": "http://ns.adobe.com/photoshop/1.0/",
     "digiKam": "http://www.digikam.org/ns/1.0/",
+    "tiff": "http://ns.adobe.com/tiff/1.0/",
     "xmp": "http://ns.adobe.com/xap/1.0/",
     "xmpDM": "http://ns.adobe.com/xmp/1.0/DynamicMedia/",
 }
@@ -98,8 +99,21 @@ class ImageRow:
     pick: int | None = None
     color_label: str | None = None
     capture_time: str | None = None
+    orientation: str | None = None
     master_image: int | None = None
     copy_name: str | None = None
+
+
+LIGHTROOM_ORIENTATION_TO_EXIF = {
+    "AB": "1",  # Horizontal / normal
+    "BA": "2",  # Mirror horizontal
+    "CD": "3",  # Rotate 180
+    "DC": "4",  # Mirror vertical
+    "CB": "5",  # Mirror horizontal and rotate 270 CW
+    "BC": "6",  # Rotate 90 CW
+    "AD": "7",  # Mirror horizontal and rotate 90 CW
+    "DA": "8",  # Rotate 270 CW
+}
 
 
 @dataclass
@@ -111,6 +125,7 @@ class FilePlan:
     picks: set[int] = field(default_factory=set)
     capture_times: set[str] = field(default_factory=set)
     inferred_capture_time: str | None = None
+    orientations: set[str] = field(default_factory=set)
     ratings: set[int] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
 
@@ -150,6 +165,7 @@ def read_images(conn: sqlite3.Connection) -> list[ImageRow]:
     master = "masterImage" if "masterImage" in image_cols else ""
     copy_name = "copyName" if "copyName" in image_cols else ""
     capture = "captureTime" if "captureTime" in image_cols else ""
+    orientation = "orientation" if "orientation" in image_cols else ""
     extension_expr = "fi.extension" if "extension" in file_cols else "''"
 
     sql = f"""
@@ -164,6 +180,7 @@ def read_images(conn: sqlite3.Connection) -> list[ImageRow]:
             {sql_value_expr('i', pick)} AS pick,
             {sql_value_expr('i', color)} AS color_label,
             {sql_value_expr('i', capture)} AS capture_time,
+            {sql_value_expr('i', orientation)} AS orientation,
             {sql_value_expr('i', master)} AS master_image,
             {sql_value_expr('i', copy_name)} AS copy_name
         FROM Adobe_images i
@@ -183,6 +200,7 @@ def read_images(conn: sqlite3.Connection) -> list[ImageRow]:
                 pick=row["pick"],
                 color_label=row["color_label"],
                 capture_time=row["capture_time"],
+                orientation=row["orientation"],
                 master_image=row["master_image"],
                 copy_name=row["copy_name"],
             )
@@ -395,12 +413,10 @@ def build_plan(
     members: dict[int, set[int]],
     keyword_paths: dict[int, str],
     keyword_members: dict[int, set[int]],
-    stacks: dict[int, tuple[int, int | None]],
     path_mappings: list[tuple[Path, Path]],
     tag_prefix: str,
     infer_missing_dates: bool,
 ) -> dict[Path, FilePlan]:
-    by_id = {img.image_id: img for img in images}
     plans: dict[Path, FilePlan] = {}
 
     for img in images:
@@ -434,27 +450,21 @@ def build_plan(
                 plan.capture_times.add(inferred)
                 plan.notes.append(f"Capture time inferred from path with {precision} precision.")
 
+        if img.orientation:
+            mapped = LIGHTROOM_ORIENTATION_TO_EXIF.get(str(img.orientation))
+            if mapped:
+                plan.orientations.add(mapped)
+            else:
+                plan.notes.append(f"Unsupported Lightroom orientation value: {img.orientation}.")
+
         if img.rating is not None:
             try:
                 plan.ratings.add(int(img.rating))
             except (TypeError, ValueError):
                 pass
 
-        if img.master_image:
-            add_tag(plan, f"{tag_prefix}/Virtual Copies")
-            if img.copy_name:
-                add_tag(plan, f"{tag_prefix}/Virtual Copies/{img.copy_name}")
-            master = by_id.get(int(img.master_image))
-            if master:
-                add_tag(plan, f"{tag_prefix}/Virtual Copy Master/{master.path.name}")
-
-        if img.image_id in stacks:
-            stack_id, position = stacks[img.image_id]
-            add_tag(plan, f"{tag_prefix}/Stacks/{stack_id}")
-            if position is not None:
-                add_tag(plan, f"{tag_prefix}/Stack Position/{int(position):04d}")
-                if int(position) == 1:
-                    add_tag(plan, f"{tag_prefix}/Stack Top")
+        # Native digiKam groups are applied separately by apply_digikam_groups.py.
+        # Do not create extra _Lightroom marker tags for stacks or virtual copies.
 
     for plan in plans.values():
         if len(plan.image_ids) > 1:
@@ -468,6 +478,10 @@ def build_plan(
         if len(plan.capture_times) > 1:
             plan.notes.append(
                 "Conflicting Lightroom capture times for this file; capture date was not written."
+            )
+        if len(plan.orientations) > 1:
+            plan.notes.append(
+                "Conflicting Lightroom orientations for this file; orientation was not written."
             )
         if len(plan.ratings) > 1:
             plan.notes.append(
@@ -597,6 +611,10 @@ def update_xmp(
         set_property_or_remove(desc, qname("xmp", "ModifyDate"), capture_time)
         set_property_or_remove(desc, qname("photoshop", "DateCreated"), capture_time)
 
+    if len(plan.orientations) == 1:
+        orientation = next(iter(plan.orientations))
+        set_property_or_remove(desc, qname("tiff", "Orientation"), orientation)
+
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
         if backup and path.exists():
@@ -643,6 +661,7 @@ def write_manifest(
                 "digikam_pick_label": next(iter(plan.picks)) if len(plan.picks) == 1 else None,
                 "capture_time": next(iter(plan.capture_times)) if len(plan.capture_times) == 1 else None,
                 "capture_time_inferred": plan.inferred_capture_time is not None,
+                "orientation": next(iter(plan.orientations)) if len(plan.orientations) == 1 else None,
                 "rating": next(iter(plan.ratings)) if len(plan.ratings) == 1 else None,
                 "notes": plan.notes,
             }
@@ -723,7 +742,6 @@ def main(argv: list[str] | None = None) -> int:
         members = read_collection_members(conn)
         keyword_paths = read_keyword_paths(conn)
         keyword_members = read_keyword_members(conn)
-        stacks = read_stack_rows(conn)
         smart_definitions = read_smart_collection_definitions(conn)
     finally:
         conn.close()
@@ -734,7 +752,6 @@ def main(argv: list[str] | None = None) -> int:
         members,
         keyword_paths,
         keyword_members,
-        stacks,
         args.path_prefix,
         args.tag_prefix,
         args.infer_missing_dates_from_path,

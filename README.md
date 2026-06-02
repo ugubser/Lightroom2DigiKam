@@ -18,15 +18,101 @@ This suite has been tested against digiKam 9.0 using explicit sidecars in the
 the portable migration path; the optional group importer writes directly to the
 digiKam database and should be treated as version-sensitive.
 
+## Validated Migration Flow
+
+This is the end-to-end flow tested with digiKam 9.0.
+
+1. Make a working copy of the photo tree.
+
+   Do not run the migration directly against the only copy of the originals.
+   The exporter writes only XMP sidecars, but the workflow is easier to test
+   and reset when it runs against a copied photo tree.
+
+2. Generate digiKam explicit sidecars from the Lightroom catalog.
+
+   ```bash
+   python3 lr_to_digikam_xmp.py \
+     "/path/to/Lightroom Catalog.lrcat" \
+     --path-prefix "/original/photo/root=/copied/photo/root" \
+     --manifest "/copied/photo/root/lightroom-xmp-migration-manifest.json" \
+     --write
+   ```
+
+   For repeated full-library runs, `--no-backup` is useful to avoid creating a
+   large number of `.bak` files for sidecars that are intentionally regenerated.
+
+   The exporter writes `filename.ext.xmp` files and migrates Lightroom keywords,
+   collections, ratings, pick/reject labels, capture dates, inferred dates, and
+   orientation/rotation. Lightroom stacks are not written as tags; they are
+   applied later as native digiKam groups.
+
+3. Create a fresh digiKam database and add the copied photo tree as an album
+   root.
+
+   In digiKam metadata settings, make sure:
+
+   - Reading XMP sidecars is enabled.
+   - Commercial-compatible sidecar names are disabled.
+   - If you want digiKam writes to stay out of image files, write metadata to
+     sidecars only.
+
+   The important sidecar setting is that digiKam reads explicit sidecars such
+   as `IMG_0001.RW2.xmp`, not commercial-compatible `IMG_0001.xmp`.
+
+4. Let digiKam finish indexing the photo tree and reading metadata.
+
+   If needed, use digiKam maintenance to read metadata from sidecars into the
+   database. Sorting and filters can be misleading while indexing is still
+   running.
+
+5. Close digiKam.
+
+   The group importer writes directly to `digikam4.db`; digiKam must not be
+   running while this script writes.
+
+6. Apply Lightroom stacks as native digiKam groups.
+
+   First dry-run:
+
+   ```bash
+   python3 apply_digikam_groups.py \
+     "/path/to/Lightroom Catalog.lrcat" \
+     "/path/to/digikam4.db" \
+     --path-prefix "/original/photo/root=/copied/photo/root" \
+     --digikam-root "/copied/photo/root" \
+     --report "./digikam-group-dry-run.json"
+   ```
+
+   Then write:
+
+   ```bash
+   python3 apply_digikam_groups.py \
+     "/path/to/Lightroom Catalog.lrcat" \
+     "/path/to/digikam4.db" \
+     --path-prefix "/original/photo/root=/copied/photo/root" \
+     --digikam-root "/copied/photo/root" \
+     --report "./digikam-group-apply-report.json" \
+     --write
+   ```
+
+   The script creates a timestamped backup of `digikam4.db` before writing.
+
+7. Reopen digiKam and validate.
+
+   Check representative folders for collection tags, ratings, pick/reject
+   labels, dates, rotated images, and grouped stacks.
+
 ## Main Scripts
 
 - `lr_to_digikam_xmp.py`
   - Reads Lightroom catalog paths, keywords, collections, ratings, pick/reject
-    labels, stack markers, virtual-copy markers, and capture dates.
+    labels, capture dates, and orientation/rotation.
   - Writes or updates digiKam explicit sidecars such as `IMG_0001.RW2.xmp`.
   - Uses existing Lightroom commercial RAW sidecars such as `IMG_0001.xmp` only
     as templates for the explicit digiKam sidecar.
   - Infers missing capture dates from year/month/day folder paths by default.
+  - Does not write Lightroom stack or virtual-copy marker tags. Native digiKam
+    groups are handled separately by `apply_digikam_groups.py`.
 
 - `lr_prune_not_in_catalog.py`
   - Compares a copied photo tree against paths referenced by Lightroom.

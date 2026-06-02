@@ -20,3 +20,5 @@ __pycache__/
 output/
 catalog_import_export/
 digikam-group-*.json
+lightroom-prune-*.json
+rejected-photos-*.csv

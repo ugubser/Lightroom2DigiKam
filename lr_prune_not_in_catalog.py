@@ -71,6 +71,40 @@ DEFAULT_MEDIA_EXTENSIONS = {
     ".x3f",
 }
 
+RAW_EXTENSIONS = {
+    ".3fr",
+    ".ari",
+    ".arw",
+    ".bay",
+    ".cr2",
+    ".cr3",
+    ".crw",
+    ".dcr",
+    ".dng",
+    ".erf",
+    ".fff",
+    ".iiq",
+    ".k25",
+    ".kdc",
+    ".mef",
+    ".mos",
+    ".mrw",
+    ".nef",
+    ".nrw",
+    ".orf",
+    ".pef",
+    ".ptx",
+    ".pxn",
+    ".raf",
+    ".raw",
+    ".rwl",
+    ".rw2",
+    ".sr2",
+    ".srf",
+    ".srw",
+    ".x3f",
+}
+
 IGNORED_NAMES = {
     ".DS_Store",
     "Thumbs.db",
@@ -84,6 +118,12 @@ IGNORED_NAMES = {
 class PruneCandidate:
     path: Path
     size: int
+
+
+@dataclass(frozen=True)
+class PrunePlan:
+    candidates: list[PruneCandidate]
+    preserved_raw_companions: list[Path]
 
 
 def parse_prefix_mapping(value: str) -> tuple[Path, Path]:
@@ -139,13 +179,25 @@ def should_consider(path: Path, media_exts: set[str], include_xmp: bool) -> bool
     return suffix in media_exts or (include_xmp and suffix == ".xmp")
 
 
+def raw_companion_keys(root: Path, media_exts: set[str]) -> set[tuple[Path, str]]:
+    keys: set[tuple[Path, str]] = set()
+    raw_exts = RAW_EXTENSIONS & media_exts
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in raw_exts:
+            keys.add((path.parent, path.stem.lower()))
+    return keys
+
+
 def find_candidates(
     root: Path,
     referenced: set[Path],
     media_exts: set[str],
     include_xmp: bool,
-) -> list[PruneCandidate]:
+) -> PrunePlan:
     candidates: list[PruneCandidate] = []
+    preserved_raw_companions: list[Path] = []
+    raw_keys = raw_companion_keys(root, media_exts)
+
     for path in root.rglob("*"):
         if not path.is_file():
             continue
@@ -159,12 +211,19 @@ def find_candidates(
         if image_path is not None and image_path in referenced:
             continue
 
+        if path.suffix.lower() not in RAW_EXTENSIONS and (path.parent, path.stem.lower()) in raw_keys:
+            preserved_raw_companions.append(path)
+            continue
+
         try:
             size = path.stat().st_size
         except OSError:
             size = 0
         candidates.append(PruneCandidate(path=path, size=size))
-    return sorted(candidates, key=lambda c: str(c.path))
+    return PrunePlan(
+        candidates=sorted(candidates, key=lambda c: str(c.path)),
+        preserved_raw_companions=sorted(preserved_raw_companions, key=lambda p: str(p)),
+    )
 
 
 def quarantine_path(path: Path, root: Path, quarantine_root: Path) -> Path:
@@ -181,11 +240,13 @@ def quarantine_path(path: Path, root: Path, quarantine_root: Path) -> Path:
     raise RuntimeError(f"Could not find available quarantine path for {path}")
 
 
-def write_report(path: Path, candidates: list[PruneCandidate]) -> None:
+def write_report(path: Path, plan: PrunePlan) -> None:
     payload = {
-        "count": len(candidates),
-        "total_bytes": sum(c.size for c in candidates),
-        "files": [{"path": str(c.path), "size": c.size} for c in candidates],
+        "count": len(plan.candidates),
+        "total_bytes": sum(c.size for c in plan.candidates),
+        "preserved_raw_companion_count": len(plan.preserved_raw_companions),
+        "files": [{"path": str(c.path), "size": c.size} for c in plan.candidates],
+        "preserved_raw_companions": [str(path) for path in plan.preserved_raw_companions],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -236,12 +297,14 @@ def main(argv: list[str] | None = None) -> int:
         media_exts = {("." + ext.lower().lstrip(".")) for ext in args.extension}
 
     referenced = catalog_paths(args.catalog, args.path_prefix)
-    candidates = find_candidates(args.root, referenced, media_exts, args.include_xmp)
-    write_report(args.report, candidates)
+    plan = find_candidates(args.root, referenced, media_exts, args.include_xmp)
+    write_report(args.report, plan)
 
+    candidates = plan.candidates
     total_bytes = sum(c.size for c in candidates)
     print(f"Lightroom referenced files after mapping: {len(referenced)}")
     print(f"Unreferenced candidates under {args.root}: {len(candidates)}")
+    print(f"Preserved unreferenced RAW companions: {len(plan.preserved_raw_companions)}")
     print(f"Candidate bytes: {total_bytes}")
     print(f"Report: {args.report}")
 
