@@ -147,6 +147,18 @@ This is the end-to-end flow tested with digiKam 9.0.
   - Dry-run by default; requires `--write` before it modifies `digikam4.db`.
   - Creates a timestamped backup of `digikam4.db` before writing.
 
+- `fix_image_dates.py`
+  - Optional maintenance script, not part of the normal migration flow.
+  - Finds digiKam image/movie rows whose creation or digitization date is the
+    placeholder `1904-01-01`.
+  - Proposes replacement dates from valid neighboring image dates in the same
+    album.
+  - Uses noon as the inferred time by default because only the date can be
+    inferred reliably.
+  - Skips multi-day albums by default unless one date strongly dominates.
+  - Dry-run by default; requires `--write` before it modifies `digikam4.db`.
+  - Creates a timestamped backup of `digikam4.db` before writing.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -429,6 +441,53 @@ Useful options:
 --min-valid-images N            require at least N usable image dates
 --dominant-threshold FLOAT      default 0.80 for multi-day dominance
 --allow-path-day                allow /YYYY/MM/DD folder paths to set the date when present in image dates
+```
+
+## Optional Image Date Cleanup
+
+Some imported files, especially videos, can end up with placeholder image dates
+such as `1904-01-01T00:00:00.000` in digiKam. Use this optional script when
+neighboring files in the same album have usable dates and the placeholder file
+should at least be placed on the correct day.
+
+This is not part of the default migration. It writes directly to
+`digikam4.db`, so close digiKam before running it with `--write`.
+
+The default policy is conservative:
+
+- only images/movies with `creationDate` or `digitizationDate` starting with
+  `1904-01-01` are considered
+- valid neighboring dates are read from other active items in the same album
+- single-day albums are proposed for update
+- multi-day albums are skipped unless one date covers at least 80% of valid
+  neighboring dates
+- proposed dates use `12:00:00` as the time by default
+- a timestamped database backup is created before writing
+
+Dry run:
+
+```bash
+python3 fix_image_dates.py \
+  "/path/to/digikam4.db" \
+  --report "./fix-image-dates-dry-run.json"
+```
+
+Write proposed image dates:
+
+```bash
+python3 fix_image_dates.py \
+  "/path/to/digikam4.db" \
+  --report "./fix-image-dates-apply-report.json" \
+  --write
+```
+
+Useful options:
+
+```text
+--write                         actually update ImageInformation dates
+--min-valid-neighbors N         require at least N usable neighboring dates
+--dominant-threshold FLOAT      default 0.80 for multi-day dominance
+--default-time HH:MM:SS         default 12:00:00 for inferred dates
 ```
 
 ## Prune Report
