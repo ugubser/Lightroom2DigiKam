@@ -129,6 +129,16 @@ This is the end-to-end flow tested with digiKam 9.0.
   - Should only be run with digiKam closed, after digiKam has imported the
     photo tree and read the generated XMP sidecars.
 
+- `remove_denoise_dngs_from_groups.py`
+  - Optional maintenance script, not part of the normal migration flow.
+  - Finds Lightroom AI denoise DNGs named like `*-Enhanced-NR*.dng` in a
+    digiKam database and removes them from native digiKam groups.
+  - If a denoise DNG is the group leader, promotes a non-denoise group member
+    where possible.
+  - Dry-run by default; requires `--write` before it modifies `digikam4.db`.
+  - Can optionally move the denoise DNG files and their XMP sidecars to a
+    quarantine folder with `--move-to`.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -321,6 +331,52 @@ Useful options:
 
 Without `--replace-existing`, existing digiKam group relations are preserved
 and conflicting Lightroom stacks are reported instead of overwritten.
+
+## Optional Denoise DNG Cleanup
+
+Lightroom AI Denoise creates derivative DNG files named like
+`*-Enhanced-NR*.dng`. If those files were imported and grouped in digiKam, use
+this optional script to remove only those denoise DNGs from native digiKam
+groups before deleting or moving them.
+
+This is not part of the default migration. Use it only if you decide that the
+Lightroom denoise DNG derivatives are not useful in digiKam.
+
+Close digiKam before running this script with `--write`.
+
+Dry run:
+
+```bash
+python3 remove_denoise_dngs_from_groups.py \
+  "/path/to/digikam4.db" \
+  --digikam-root "/photo/root" \
+  --report "./remove-denoise-dngs-dry-run.json"
+```
+
+Remove denoise DNGs from digiKam groups only:
+
+```bash
+python3 remove_denoise_dngs_from_groups.py \
+  "/path/to/digikam4.db" \
+  --digikam-root "/photo/root" \
+  --report "./remove-denoise-dngs-apply-report.json" \
+  --write
+```
+
+Remove them from groups and move the DNG files plus sidecars to quarantine:
+
+```bash
+python3 remove_denoise_dngs_from_groups.py \
+  "/path/to/digikam4.db" \
+  --digikam-root "/photo/root" \
+  --move-to "/path/to/denoise-dng-quarantine" \
+  --report "./remove-denoise-dngs-apply-report.json" \
+  --write
+```
+
+The script creates a timestamped backup of `digikam4.db` before writing. It
+does not delete image files; `--move-to` moves them out of the photo tree for
+review.
 
 ## Prune Report
 
