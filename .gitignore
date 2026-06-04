@@ -20,6 +20,7 @@ __pycache__/
 output/
 catalog_import_export/
 digikam-group-*.json
+fix-album-dates-*.json
 lightroom-prune-*.json
 remove-denoise-dngs-*.json
 rejected-photos-*.csv

@@ -139,6 +139,14 @@ This is the end-to-end flow tested with digiKam 9.0.
   - Can optionally move the denoise DNG files and their XMP sidecars to a
     quarantine folder with `--move-to`.
 
+- `fix_album_dates.py`
+  - Optional maintenance script, not part of the normal migration flow.
+  - Finds digiKam albums whose album date is the placeholder `1904-01-01`.
+  - Proposes replacement album dates from valid image dates inside each album.
+  - Skips multi-day albums by default unless one date strongly dominates.
+  - Dry-run by default; requires `--write` before it modifies `digikam4.db`.
+  - Creates a timestamped backup of `digikam4.db` before writing.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -377,6 +385,51 @@ python3 remove_denoise_dngs_from_groups.py \
 The script creates a timestamped backup of `digikam4.db` before writing. It
 does not delete image files; `--move-to` moves them out of the photo tree for
 review.
+
+## Optional Album Date Cleanup
+
+digiKam stores a date on each album/folder separately from the image capture
+dates. Some albums can end up with the placeholder date `1904-01-01`. Use this
+optional script to replace that album date when the images inside the album
+provide a clear single-day date.
+
+This is not part of the default migration. It writes directly to
+`digikam4.db`, so close digiKam before running it with `--write`.
+
+The default policy is conservative:
+
+- only albums with `Albums.date = 1904-01-01` are considered
+- image dates at or before `1904-01-01` are ignored
+- single-day albums are proposed for update
+- multi-day albums are skipped unless one date covers at least 80% of valid
+  image dates
+- a timestamped database backup is created before writing
+
+Dry run:
+
+```bash
+python3 fix_album_dates.py \
+  "/path/to/digikam4.db" \
+  --report "./fix-album-dates-dry-run.json"
+```
+
+Write proposed album dates:
+
+```bash
+python3 fix_album_dates.py \
+  "/path/to/digikam4.db" \
+  --report "./fix-album-dates-apply-report.json" \
+  --write
+```
+
+Useful options:
+
+```text
+--write                         actually update Albums.date
+--min-valid-images N            require at least N usable image dates
+--dominant-threshold FLOAT      default 0.80 for multi-day dominance
+--allow-path-day                allow /YYYY/MM/DD folder paths to set the date when present in image dates
+```
 
 ## Prune Report
 
