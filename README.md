@@ -159,6 +159,19 @@ This is the end-to-end flow tested with digiKam 9.0.
   - Dry-run by default; requires `--write` before it modifies `digikam4.db`.
   - Creates a timestamped backup of `digikam4.db` before writing.
 
+- `fix_dates_from_path.py`
+  - Work-in-progress optional maintenance script, not part of the normal
+    migration flow.
+  - Compares digiKam image dates and album dates against dated folder paths.
+  - Exact `/YYYY/MM/DD` paths can update image dates while preserving the time
+    of day, and write matching explicit `filename.ext.xmp` sidecars.
+  - Month-only or year-only paths are reported but not changed, because the
+    exact day cannot be inferred safely.
+  - Supports `--album-only` and `--picture-only` to restrict writes.
+  - Dry-run by default; requires `--write` before it modifies `digikam4.db` or
+    writes sidecars.
+  - Creates a timestamped backup of `digikam4.db` before writing.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -488,6 +501,52 @@ Useful options:
 --min-valid-neighbors N         require at least N usable neighboring dates
 --dominant-threshold FLOAT      default 0.80 for multi-day dominance
 --default-time HH:MM:SS         default 12:00:00 for inferred dates
+```
+
+## Optional Path-Based Date Audit
+
+`fix_dates_from_path.py` is a work-in-progress maintenance script for cases
+where digiKam image dates disagree with dated folder paths. It is intentionally
+more cautious than the placeholder-date scripts.
+
+The script can act only when the folder path contains an exact day:
+
+```text
+/YYYY/MM/DD
+```
+
+For those exact paths, it can update image dates while preserving the existing
+time of day, and it can write the same corrected date fields to explicit
+sidecars such as `filename.ext.xmp`. Month-only or year-only paths are reported
+for review but not changed.
+
+Dry run:
+
+```bash
+python3 fix_dates_from_path.py \
+  "/path/to/digikam4.db" \
+  --digikam-root "/photo/root" \
+  --report "./fix-dates-from-path-dry-run.json"
+```
+
+Write proposed exact-day image/date fixes:
+
+```bash
+python3 fix_dates_from_path.py \
+  "/path/to/digikam4.db" \
+  --digikam-root "/photo/root" \
+  --report "./fix-dates-from-path-apply-report.json" \
+  --write
+```
+
+Useful options:
+
+```text
+--write                         update digiKam and write XMP sidecars
+--digikam-root FOLDER           photo root used to locate filename.ext.xmp sidecars
+--album-only                    only write album date fixes
+--picture-only                  only write image date fixes
+--no-sidecars                   update digiKam only; do not write XMP sidecars
 ```
 
 ## Prune Report

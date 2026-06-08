@@ -21,6 +21,10 @@ output/
 catalog_import_export/
 digikam-group-*.json
 fix-album-dates-*.json
+fix-dates-from-path-*.json
+fix-image-dates-*.json
 lightroom-prune-*.json
 remove-denoise-dngs-*.json
+album-date-*.csv
+album-early-morning-report.csv
 rejected-photos-*.csv
