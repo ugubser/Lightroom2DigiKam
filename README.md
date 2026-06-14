@@ -181,6 +181,16 @@ This is the end-to-end flow tested with digiKam 9.0.
     marks candidates rejected/no-good.
   - Does not modify the digiKam database.
 
+- `create_commercial_xmp_sidecars.py`
+  - Optional interoperability script, not part of the normal migration flow.
+  - Reads digiKam read-only and finds RAW files with explicit digiKam sidecars
+    such as `filename.RW2.xmp`.
+  - Creates missing commercial-compatible sidecars such as `filename.xmp` by
+    copying the explicit sidecar.
+  - Skips JPG/JPEG files and skips existing commercial sidecars by default.
+  - Dry-run by default; with `--write`, writes sidecar files only.
+  - Does not modify the digiKam database.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -609,6 +619,46 @@ Useful options:
 --no-recursive                  inspect only the exact album
 --raw-extensions EXT[,EXT...]   override RAW extensions used for counterpart matching
 --write                         mark candidate JPG sidecars rejected/no-good
+```
+
+## Optional Commercial XMP Sidecars
+
+`create_commercial_xmp_sidecars.py` creates commercial-compatible RAW sidecars
+for tools that expect `filename.xmp` instead of digiKam's explicit
+`filename.rawext.xmp` form.
+
+This is useful for read-only external RAW tools that can consume ratings, tags,
+or labels from commercial sidecars but do not understand digiKam's explicit
+sidecar naming. The script copies existing explicit RAW sidecars and does not
+modify the digiKam database.
+
+Dry run:
+
+```bash
+python3 create_commercial_xmp_sidecars.py \
+  "/path/to/digikam4.db" \
+  "/photo/root/2026/04/London Trip" \
+  --photo-root "/photo/root"
+```
+
+Create missing commercial sidecars:
+
+```bash
+python3 create_commercial_xmp_sidecars.py \
+  "/path/to/digikam4.db" \
+  "/photo/root/2026/04/London Trip" \
+  --photo-root "/photo/root" \
+  --write
+```
+
+Useful options:
+
+```text
+--photo-root FOLDER             photo root used to locate sidecars
+--no-recursive                  inspect only the exact album
+--raw-extensions EXT[,EXT...]   override RAW extensions to process
+--overwrite                     overwrite existing commercial sidecars, with .bak backups
+--write                         create/copy commercial sidecars
 ```
 
 ## Prune Report
