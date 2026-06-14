@@ -172,6 +172,15 @@ This is the end-to-end flow tested with digiKam 9.0.
     writes sidecars.
   - Creates a timestamped backup of `digikam4.db` before writing.
 
+- `find_orphan_raw_jpegs.py`
+  - Optional maintenance script, not part of the normal migration flow.
+  - Reads digiKam read-only and finds JPG/JPEG files from a selected camera
+    model that have no same-stem RAW counterpart in the same album.
+  - Can scan one album or a whole album subtree.
+  - Dry-run by default; with `--write`, updates only explicit JPG sidecars and
+    marks candidates rejected/no-good.
+  - Does not modify the digiKam database.
+
 ## Supporting Scripts
 
 - `export_catalog_package.py`
@@ -547,6 +556,59 @@ Useful options:
 --album-only                    only write album date fixes
 --picture-only                  only write image date fixes
 --no-sidecars                   update digiKam only; do not write XMP sidecars
+```
+
+## Optional Orphan RAW+JPG Cleanup
+
+`find_orphan_raw_jpegs.py` helps find JPG files that likely belonged to a
+RAW+JPG pair where the RAW file was deleted or rejected, but the JPG survived.
+This is useful for camera bodies that normally shoot RAW+JPG.
+
+The script reads `digikam4.db` in read-only mode. It matches JPG/JPEG files
+against RAW files by same filename stem inside the same digiKam album. Passing
+an album subtree, such as a trip folder, scans all albums below that path by
+default.
+
+List camera models in a subtree:
+
+```bash
+python3 find_orphan_raw_jpegs.py \
+  "/path/to/digikam4.db" \
+  "/photo/root/2026/04/London Trip" \
+  --photo-root "/photo/root" \
+  --list-models
+```
+
+Dry run for one camera model:
+
+```bash
+python3 find_orphan_raw_jpegs.py \
+  "/path/to/digikam4.db" \
+  "/photo/root/2026/04/London Trip" \
+  --photo-root "/photo/root" \
+  --model "DC-GX9"
+```
+
+Mark candidate JPG sidecars as rejected/no-good:
+
+```bash
+python3 find_orphan_raw_jpegs.py \
+  "/path/to/digikam4.db" \
+  "/photo/root/2026/04/London Trip" \
+  --photo-root "/photo/root" \
+  --model "DC-GX9" \
+  --write
+```
+
+Useful options:
+
+```text
+--list-models                   list camera models in the album/subtree
+--model MODEL                   exact camera model to inspect
+--make MAKE                     optional exact camera make filter
+--no-recursive                  inspect only the exact album
+--raw-extensions EXT[,EXT...]   override RAW extensions used for counterpart matching
+--write                         mark candidate JPG sidecars rejected/no-good
 ```
 
 ## Prune Report
